@@ -8,7 +8,7 @@ local DEFAULT_DELAY_CANCEL    = 0.08   -- detik: Cancel cepat
 local DEFAULT_DECISION_FALLBACK = "cancel" -- kalau rarity belum kebaca: "cancel" / "complete"
 
 -- Spam Completed agar pasti ketarik
-local SPAM_COMPLETE_WINDOW  = 5.0   -- detik total spam setelah Completed pertama
+local SPAM_COMPLETE_WINDOW  = 3.0   -- detik total spam setelah Completed pertama
 local SPAM_COMPLETE_INTERVAL= 0.12  -- jeda antar-spam
 local POST_ACTION_COOLDOWN  = 0.25  -- cooldown kecil di akhir siklus
 --===========================
