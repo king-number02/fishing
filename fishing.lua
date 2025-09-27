@@ -4,17 +4,18 @@ local REQUEST_ARG1    = -1.233184814453125
 local REQUEST_ARG2    = 0.9936770049557389
 
 local DEFAULT_DELAY_COMPLETED = 1.00   -- detik: Completed X detik SETELAH Request
-local DEFAULT_DELAY_CANCEL    = 0.08   -- detik: Cancel cepat
-local DEFAULT_DECISION_FALLBACK = "cancel" -- kalau rarity belum kebaca: "cancel" / "complete"
+local DEFAULT_DELAY_CANCEL    = 0.08   -- detik: Cancel cepat setelah Request
+local DEFAULT_DECISION_FALLBACK = "cancel" -- jika rarity belum terbaca: "cancel" / "complete"
 
--- Spam Completed agar pasti ketarik
-local SPAM_COMPLETE_WINDOW  = 3.0   -- detik total spam setelah Completed pertama
-local SPAM_COMPLETE_INTERVAL= 0.12  -- jeda antar-spam
-local POST_ACTION_COOLDOWN  = 0.25  -- cooldown kecil di akhir siklus
+-- Spam Completed (agar pasti ketarik)
+local SPAM_COMPLETE_WINDOW   = 3.0   -- detik total spam setelah Completed pertama
+local SPAM_COMPLETE_INTERVAL = 0.12  -- jeda antar spam Completed
+local POST_ACTION_COOLDOWN   = 0.25  -- cooldown kecil setelah aksi
 --===========================
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 -- Remotes
@@ -52,7 +53,7 @@ local function hueIn(h,lo,hi) return h>=lo and h<=hi end
 local function rarityFromColor(col)
     local h,s,v=rgbToHsv(col)
     if v>0.88 and s<0.15 then return "common" end           -- putih
-    if hueIn(h, 70,150) then return "uncommon" end           -- hijau muda → hijau
+    if hueIn(h, 70,150) then return "uncommon" end           -- hijau muda -> hijau
     if hueIn(h,160,230) then return "rare" end               -- biru
     if hueIn(h,250,310) then return "epic" end               -- ungu
     if hueIn(h, 40, 65) then return "legendary" end          -- kuning
@@ -95,144 +96,217 @@ RE_Exclaim.OnClientEvent:Connect(function(...)
     end
 end)
 
--- === GUI ===
+-- ====== GUI ======
 local rarList={"common","uncommon","rare","epic","legendary","mythic","secret"}
 local selected={common=true,uncommon=true,rare=true,epic=true,legendary=true,mythic=true,secret=true}
 
-local gui=Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
-gui.Name="AutoFishingGUI"
+-- builder GUI (safe untuk respawn)
+local gui, frame, dCompBox, dCancBox, statusLbl, lastLbl, startBtn, stopBtn
+local minimized=false
 
-local frame=Instance.new("Frame",gui)
-frame.Size=UDim2.new(0,300,0,360)
-frame.Position=UDim2.new(0,20,0,200)
-frame.BackgroundColor3=Color3.fromRGB(30,30,30)
-Instance.new("UICorner",frame).CornerRadius=UDim.new(0,10)
+local function ensureParented(g)
+    -- coba CoreGui (kadang dibatasi), jika gagal pakai PlayerGui
+    local ok=pcall(function() g.Parent = game:GetService("CoreGui") end)
+    if not ok then
+        g.Parent = LP:WaitForChild("PlayerGui")
+    end
+end
 
-local title=Instance.new("TextLabel",frame)
-title.Size=UDim2.new(1,-12,0,22)
-title.Position=UDim2.new(0,6,0,6)
-title.BackgroundTransparency=1
-title.Text="Auto Fishing (Filter + Spam Complete)"
-title.TextColor3=Color3.fromRGB(255,255,255)
-title.Font=Enum.Font.GothamBold
-title.TextSize=16
-title.TextXAlignment=Enum.TextXAlignment.Left
+local function buildGui()
+    if gui and gui.Parent then return end
+    gui = Instance.new("ScreenGui")
+    gui.Name = "AutoFishingGUI"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    ensureParented(gui)
 
-local statusLbl=Instance.new("TextLabel",frame)
-statusLbl.Size=UDim2.new(1,-12,0,18)
-statusLbl.Position=UDim2.new(0,6,0,28)
-statusLbl.BackgroundTransparency=1
-statusLbl.Text="Status: Idle"
-statusLbl.TextColor3=Color3.fromRGB(210,210,210)
-statusLbl.Font=Enum.Font.Gotham
-statusLbl.TextSize=14
-statusLbl.TextXAlignment=Enum.TextXAlignment.Left
+    frame = Instance.new("Frame")
+    frame.Name = "Main"
+    frame.Size = UDim2.new(0,300,0,360)
+    frame.Position = UDim2.new(0,20,0,200)
+    frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    frame.BorderSizePixel = 0
+    frame.Parent = gui
+    Instance.new("UICorner",frame).CornerRadius = UDim.new(0,10)
 
-local lastLbl=Instance.new("TextLabel",frame)
-lastLbl.Size=UDim2.new(1,-12,0,18)
-lastLbl.Position=UDim2.new(0,6,0,46)
-lastLbl.BackgroundTransparency=1
-lastLbl.Text="Last: -"
-lastLbl.TextColor3=Color3.fromRGB(200,200,140)
-lastLbl.Font=Enum.Font.Gotham
-lastLbl.TextSize=14
-lastLbl.TextXAlignment=Enum.TextXAlignment.Left
+    local title=Instance.new("TextLabel",frame)
+    title.Size=UDim2.new(1,-36,0,22)
+    title.Position=UDim2.new(0,6,0,6)
+    title.BackgroundTransparency=1
+    title.Text="Auto Fishing (Filter + Spam)"
+    title.TextColor3=Color3.fromRGB(255,255,255)
+    title.Font=Enum.Font.GothamBold
+    title.TextSize=16
+    title.TextXAlignment=Enum.TextXAlignment.Left
 
--- Delay Completed
-local dCompLbl=Instance.new("TextLabel",frame)
-dCompLbl.Size=UDim2.new(0,160,0,18)
-dCompLbl.Position=UDim2.new(0,6,0,70)
-dCompLbl.BackgroundTransparency=1
-dCompLbl.Text="Delay Completed (s):"
-dCompLbl.TextColor3=Color3.fromRGB(200,200,200)
-dCompLbl.Font=Enum.Font.Gotham
-dCompLbl.TextSize=13
-dCompLbl.TextXAlignment=Enum.TextXAlignment.Left
+    -- tombol minimize
+    local miniBtn=Instance.new("TextButton",frame)
+    miniBtn.Size=UDim2.new(0,24,0,24)
+    miniBtn.Position=UDim2.new(1,-28,0,4)
+    miniBtn.Text="-"
+    miniBtn.BackgroundColor3=Color3.fromRGB(80,80,80)
+    miniBtn.TextColor3=Color3.new(1,1,1)
+    miniBtn.Font=Enum.Font.GothamBold
+    miniBtn.TextSize=16
+    miniBtn.Parent=frame
+    Instance.new("UICorner",miniBtn).CornerRadius=UDim.new(0,6)
+    minimized=false
+    miniBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        for _,child in ipairs(frame:GetChildren()) do
+            if child ~= miniBtn and child:IsA("GuiObject") then
+                child.Visible = not minimized
+            end
+        end
+        miniBtn.Text = minimized and "+" or "-"
+        frame.Size = minimized and UDim2.new(0,300,0,32) or UDim2.new(0,300,0,360)
+    end)
 
-local dCompBox=Instance.new("TextBox",frame)
-dCompBox.Size=UDim2.new(0,70,0,22)
-dCompBox.Position=UDim2.new(0,170,0,70)
-dCompBox.Text=tostring(DEFAULT_DELAY_COMPLETED)
-dCompBox.BackgroundColor3=Color3.fromRGB(40,40,50)
-dCompBox.TextColor3=Color3.fromRGB(255,255,255)
-dCompBox.ClearTextOnFocus=false
-dCompBox.Font=Enum.Font.Gotham
-dCompBox.TextSize=13
-Instance.new("UICorner",dCompBox).CornerRadius=UDim.new(0,6)
+    statusLbl=Instance.new("TextLabel",frame)
+    statusLbl.Size=UDim2.new(1,-12,0,18)
+    statusLbl.Position=UDim2.new(0,6,0,28)
+    statusLbl.BackgroundTransparency=1
+    statusLbl.Text="Status: Idle"
+    statusLbl.TextColor3=Color3.fromRGB(210,210,210)
+    statusLbl.Font=Enum.Font.Gotham
+    statusLbl.TextSize=14
+    statusLbl.TextXAlignment=Enum.TextXAlignment.Left
 
--- Delay Cancel
-local dCancLbl=Instance.new("TextLabel",frame)
-dCancLbl.Size=UDim2.new(0,160,0,18)
-dCancLbl.Position=UDim2.new(0,6,0,94)
-dCancLbl.BackgroundTransparency=1
-dCancLbl.Text="Delay Cancel (s):"
-dCancLbl.TextColor3=Color3.fromRGB(200,200,200)
-dCancLbl.Font=Enum.Font.Gotham
-dCancLbl.TextSize=13
-dCancLbl.TextXAlignment=Enum.TextXAlignment.Left
+    lastLbl=Instance.new("TextLabel",frame)
+    lastLbl.Size=UDim2.new(1,-12,0,18)
+    lastLbl.Position=UDim2.new(0,6,0,46)
+    lastLbl.BackgroundTransparency=1
+    lastLbl.Text="Last: -"
+    lastLbl.TextColor3=Color3.fromRGB(200,200,140)
+    lastLbl.Font=Enum.Font.Gotham
+    lastLbl.TextSize=14
+    lastLbl.TextXAlignment=Enum.TextXAlignment.Left
 
-local dCancBox=Instance.new("TextBox",frame)
-dCancBox.Size=UDim2.new(0,70,0,22)
-dCancBox.Position=UDim2.new(0,170,0,94)
-dCancBox.Text=tostring(DEFAULT_DELAY_CANCEL)
-dCancBox.BackgroundColor3=Color3.fromRGB(40,40,50)
-dCancBox.TextColor3=Color3.fromRGB(255,255,255)
-dCancBox.ClearTextOnFocus=false
-dCancBox.Font=Enum.Font.Gotham
-dCancBox.TextSize=13
-Instance.new("UICorner",dCancBox).CornerRadius=UDim.new(0,6)
+    local dCompLbl=Instance.new("TextLabel",frame)
+    dCompLbl.Size=UDim2.new(0,160,0,18)
+    dCompLbl.Position=UDim2.new(0,6,0,70)
+    dCompLbl.BackgroundTransparency=1
+    dCompLbl.Text="Delay Completed (s):"
+    dCompLbl.TextColor3=Color3.fromRGB(200,200,200)
+    dCompLbl.Font=Enum.Font.Gotham
+    dCompLbl.TextSize=13
+    dCompLbl.TextXAlignment=Enum.TextXAlignment.Left
 
-local startBtn=Instance.new("TextButton",frame)
-startBtn.Size=UDim2.new(0,120,0,28)
-startBtn.Position=UDim2.new(0,6,0,122)
-startBtn.Text="Start"
-startBtn.BackgroundColor3=Color3.fromRGB(60,180,90)
-startBtn.TextColor3=Color3.new(1,1,1)
-startBtn.Font=Enum.Font.GothamSemibold
-startBtn.TextSize=14
-Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,8)
+    dCompBox=Instance.new("TextBox",frame)
+    dCompBox.Size=UDim2.new(0,70,0,22)
+    dCompBox.Position=UDim2.new(0,170,0,70)
+    dCompBox.Text=tostring(DEFAULT_DELAY_COMPLETED)
+    dCompBox.BackgroundColor3=Color3.fromRGB(40,40,50)
+    dCompBox.TextColor3=Color3.fromRGB(255,255,255)
+    dCompBox.ClearTextOnFocus=false
+    dCompBox.Font=Enum.Font.Gotham
+    dCompBox.TextSize=13
+    Instance.new("UICorner",dCompBox).CornerRadius=UDim.new(0,6)
 
-local stopBtn=Instance.new("TextButton",frame)
-stopBtn.Size=UDim2.new(0,120,0,28)
-stopBtn.Position=UDim2.new(0,150,0,122)
-stopBtn.Text="Stop"
-stopBtn.BackgroundColor3=Color3.fromRGB(200,70,70)
-stopBtn.TextColor3=Color3.new(1,1,1)
-stopBtn.Font=Enum.Font.GothamSemibold
-stopBtn.TextSize=14
-Instance.new("UICorner",stopBtn).CornerRadius=UDim.new(0,8)
+    local dCancLbl=Instance.new("TextLabel",frame)
+    dCancLbl.Size=UDim2.new(0,160,0,18)
+    dCancLbl.Position=UDim2.new(0,6,0,94)
+    dCancLbl.BackgroundTransparency=1
+    dCancLbl.Text="Delay Cancel (s):"
+    dCancLbl.TextColor3=Color3.fromRGB(200,200,200)
+    dCancLbl.Font=Enum.Font.Gotham
+    dCancLbl.TextSize=13
+    dCancLbl.TextXAlignment=Enum.TextXAlignment.Left
 
--- Toggle rarity (2 kolom)
-local rarList={"common","uncommon","rare","epic","legendary","mythic","secret"}
-local selected={common=true,uncommon=true,rare=true,epic=true,legendary=true,mythic=true,secret=true}
+    dCancBox=Instance.new("TextBox",frame)
+    dCancBox.Size=UDim2.new(0,70,0,22)
+    dCancBox.Position=UDim2.new(0,170,0,94)
+    dCancBox.Text=tostring(DEFAULT_DELAY_CANCEL)
+    dCancBox.BackgroundColor3=Color3.fromRGB(40,40,50)
+    dCancBox.TextColor3=Color3.fromRGB(255,255,255)
+    dCancBox.ClearTextOnFocus=false
+    dCancBox.Font=Enum.Font.Gotham
+    dCancBox.TextSize=13
+    Instance.new("UICorner",dCancBox).CornerRadius=UDim.new(0,6)
 
-local function mkToggle(i,name)
-    local col=(i%2==1) and 6 or 156
-    local row=math.floor((i-1)/2)
-    local y=158+row*28
-    local btn=Instance.new("TextButton",frame)
-    btn.Size=UDim2.new(0,138,0,24)
-    btn.Position=UDim2.new(0,col,0,y)
-    btn.BackgroundColor3=selected[name] and Color3.fromRGB(60,160,90) or Color3.fromRGB(55,55,65)
-    btn.Text=name.." : "..(selected[name] and "ON" or "OFF")
-    btn.TextColor3=Color3.new(1,1,1)
-    btn.Font=Enum.Font.Gotham
-    btn.TextSize=13
-    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
-    btn.MouseButton1Click:Connect(function()
-        selected[name]=not selected[name]
+    startBtn=Instance.new("TextButton",frame)
+    startBtn.Size=UDim2.new(0,120,0,28)
+    startBtn.Position=UDim2.new(0,6,0,122)
+    startBtn.Text="Start"
+    startBtn.BackgroundColor3=Color3.fromRGB(60,180,90)
+    startBtn.TextColor3=Color3.new(1,1,1)
+    startBtn.Font=Enum.Font.GothamSemibold
+    startBtn.TextSize=14
+    Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,8)
+
+    stopBtn=Instance.new("TextButton",frame)
+    stopBtn.Size=UDim2.new(0,120,0,28)
+    stopBtn.Position=UDim2.new(0,150,0,122)
+    stopBtn.Text="Stop"
+    stopBtn.BackgroundColor3=Color3.fromRGB(200,70,70)
+    stopBtn.TextColor3=Color3.new(1,1,1)
+    stopBtn.Font=Enum.Font.GothamSemibold
+    stopBtn.TextSize=14
+    Instance.new("UICorner",stopBtn).CornerRadius=UDim.new(0,8)
+
+    -- Toggle rarity (2 kolom)
+    local function mkToggle(i,name)
+        local col=(i%2==1) and 6 or 156
+        local row=math.floor((i-1)/2)
+        local y=158+row*28
+        local btn=Instance.new("TextButton",frame)
+        btn.Size=UDim2.new(0,138,0,24)
+        btn.Position=UDim2.new(0,col,0,y)
         btn.BackgroundColor3=selected[name] and Color3.fromRGB(60,160,90) or Color3.fromRGB(55,55,65)
         btn.Text=name.." : "..(selected[name] and "ON" or "OFF")
+        btn.TextColor3=Color3.new(1,1,1)
+        btn.Font=Enum.Font.Gotham
+        btn.TextSize=13
+        Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
+        btn.MouseButton1Click:Connect(function()
+            selected[name]=not selected[name]
+            btn.BackgroundColor3=selected[name] and Color3.fromRGB(60,160,90) or Color3.fromRGB(55,55,65)
+            btn.Text=name.." : "..(selected[name] and "ON" or "OFF")
+        end)
+    end
+    for i,name in ipairs(rarList) do mkToggle(i,name) end
+
+    -- Drag support (frame bisa digeser)
+    local dragging=false
+    local dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
     end)
 end
-for i,name in ipairs(rarList) do mkToggle(i,name) end
 
--- === Helpers (safe invoke) ===
+buildGui()
+
+-- Pastikan GUI tetap ada saat respawn (kalau engine mindah-mindah PlayerGui)
+LP.CharacterAdded:Connect(function()
+    if not gui or not gui.Parent then
+        buildGui()
+    end
+end)
+
+-- ====== HELPERS INVOKE ======
 local function safeInvoke(fn, label)
     local ok, err = pcall(fn)
     if not ok then
         warn("[AutoFishing] "..label.." error:", err)
-        statusLbl.Text = "Status: "..label.." error"
+        if statusLbl then statusLbl.Text = "Status: "..label.." error" end
     end
     return ok
 end
@@ -241,9 +315,12 @@ local function request()  return safeInvoke(function() RF_Request:InvokeServer(R
 local function cancel()   return safeInvoke(function() RF_Cancel:InvokeServer() end, "Cancel") end
 local function complete() return safeInvoke(function() RE_Complete:FireServer() end, "Completed") end
 
--- === MAIN LOOP ===
+-- ====== LOOP UTAMA ======
 local running=false
+
 local function runOnce(delayCompleted, delayCancel)
+    if not frame or not frame.Parent then buildGui() end
+
     statusLbl.Text="Status: Charging"
     charge()
     statusLbl.Text="Status: Requesting"
@@ -251,7 +328,7 @@ local function runOnce(delayCompleted, delayCancel)
 
     local tRequest = os.clock()
 
-    -- jendela kecil membaca rarity (tanpa menunda aksi absolut)
+    -- Jendela kecil untuk "membaca" rarity (tanpa menunda aksi absolut)
     local decisionWindow = math.max(0.05, math.min(delayCompleted - 0.05, 0.60))
     local rar = nil
     while os.clock() - tRequest < decisionWindow do
@@ -263,7 +340,7 @@ local function runOnce(delayCompleted, delayCancel)
     end
     lastLbl.Text = "Last: "..tostring(rar or "unknown")
 
-    -- tentukan aksi
+    -- Tentukan aksi
     local action
     if rar and selected[rar] then
         action = "complete"
@@ -275,14 +352,14 @@ local function runOnce(delayCompleted, delayCancel)
 
     if action=="complete" then
         statusLbl.Text="Will Complete (spam)"
-        -- tunggu sampai tepat delayCompleted dari Request
+        -- Tunggu hingga tepat delayCompleted dari Request
         local waitLeft = delayCompleted - (os.clock() - tRequest)
         if waitLeft > 0 then task.wait(waitLeft) end
 
-        -- kirim Completed pertama
+        -- Completed pertama
         complete()
 
-        -- SPAM Completed hingga 5 detik atau sampai state game berubah (kita tidak punya sinyal sukses yang pasti, jadi kita spam window penuh)
+        -- SPAM Completed sampai window habis
         local spamStart = os.clock()
         while os.clock() - spamStart < SPAM_COMPLETE_WINDOW do
             complete()
