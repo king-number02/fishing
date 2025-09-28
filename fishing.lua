@@ -52,14 +52,27 @@ local function hueIn(h,lo,hi) return h>=lo and h<=hi end
 
 local function rarityFromColor(col)
     local h,s,v=rgbToHsv(col)
-    if v>0.88 and s<0.15 then return "common" end           -- putih
-    if hueIn(h, 70,150) then return "uncommon" end           -- hijau muda -> hijau
-    if hueIn(h,160,230) then return "rare" end               -- biru
-    if hueIn(h,250,310) then return "epic" end               -- ungu
-    if hueIn(h, 40, 65) then return "legendary" end          -- kuning
-    if hueIn(h,   0, 15) or hueIn(h,350,360) then return "mythic" end -- merah
-    return "secret"                                          -- selain palet di atas
+    if v>0.88 and s<0.15 then return "common" end              -- putih
+
+    -- hijau muda / hijau murni
+    if hueIn(h,90,130) then return "uncommon" end
+
+    -- biru murni (rare)
+    if hueIn(h,190,230) then return "rare" end
+
+    -- ungu (epic)
+    if hueIn(h,250,310) then return "epic" end
+
+    -- kuning (legendary)
+    if hueIn(h, 40, 65) then return "legendary" end
+
+    -- merah (mythic)
+    if hueIn(h,   0, 15) or hueIn(h,350,360) then return "mythic" end
+
+    -- sisanya (termasuk teal/hijau tosca)
+    return "secret"
 end
+
 
 local function isDesc(a,b)
     if not (a and b) then return false end
