@@ -3,14 +3,14 @@ local CHARGE_ARG      = 1758981623.918268
 local REQUEST_ARG1    = -1.233184814453125
 local REQUEST_ARG2    = 0.9936770049557389
 
-local DEFAULT_DELAY_COMPLETED = 0.00   -- detik: Completed X detik SETELAH Request
+local DEFAULT_DELAY_COMPLETED = 1.00   -- detik: Completed X detik SETELAH Request
 local DEFAULT_DELAY_CANCEL    = 0.08   -- detik: Cancel cepat setelah Request
-local DEFAULT_DECISION_FALLBACK = "complete" -- jika rarity belum terbaca: "cancel" / "complete"
+local DEFAULT_DECISION_FALLBACK = "cancel" -- jika rarity belum terbaca: "cancel" / "complete"
 
 -- Spam Completed (agar pasti ketarik)
 local SPAM_COMPLETE_WINDOW   = 0.5   -- detik total spam setelah Completed pertama
-local SPAM_COMPLETE_INTERVAL = 0.1  -- jeda antar spam Completed
-local POST_ACTION_COOLDOWN   = 0  -- cooldown kecil setelah aksi
+local SPAM_COMPLETE_INTERVAL = 0.05  -- jeda antar spam Completed
+local POST_ACTION_COOLDOWN   = 0.1  -- cooldown kecil setelah aksi
 --===========================
 
 local Players = game:GetService("Players")
