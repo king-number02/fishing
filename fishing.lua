@@ -3,7 +3,7 @@ local CHARGE_ARG      = 1758981623.918268
 local REQUEST_ARG1    = -1.233184814453125
 local REQUEST_ARG2    = 0.9936770049557389
 
-local DEFAULT_DELAY_COMPLETED = 0   -- detik: Completed X detik SETELAH Request
+local DEFAULT_DELAY_COMPLETED = 0.00   -- detik: Completed X detik SETELAH Request
 local DEFAULT_DELAY_CANCEL    = 0.08   -- detik: Cancel cepat setelah Request
 local DEFAULT_DECISION_FALLBACK = "cancel" -- jika rarity belum terbaca: "cancel" / "complete"
 
