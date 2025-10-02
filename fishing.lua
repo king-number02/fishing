@@ -5,7 +5,7 @@ local REQUEST_ARG2    = 0.9936770049557389
 
 local DEFAULT_DELAY_COMPLETED = 0.00   -- detik: Completed X detik SETELAH Request
 local DEFAULT_DELAY_CANCEL    = 0.08   -- detik: Cancel cepat setelah Request
-local DEFAULT_DECISION_FALLBACK = "cancel" -- jika rarity belum terbaca: "cancel" / "complete"
+local DEFAULT_DECISION_FALLBACK = "complete" -- jika rarity belum terbaca: "cancel" / "complete"
 
 -- Spam Completed (agar pasti ketarik)
 local SPAM_COMPLETE_WINDOW   = 0.5   -- detik total spam setelah Completed pertama
